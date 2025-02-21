@@ -26,7 +26,7 @@ RECOMP_PATCH void func_80322490(void) {
 
     if (D_80383330 != 0) {
         for(i_ptr = D_8036DE00; i_ptr != &D_8036DE00[6]; i_ptr++){
-            
+            // @recomp Always allow skipping the intro sequence.
             if((i_ptr->unk4 != 0 || (i_ptr->unkC == func_80322318 && map_get() == MAP_1F_CS_START_RAREWARE)) && i_ptr->unkC != NULL){
                 i_ptr->unkC(i_ptr);
             }
