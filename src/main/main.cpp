@@ -26,6 +26,7 @@
 #include "banjo_sound.h"
 #include "banjo_render.h"
 #include "banjo_game.h"
+#include "recomp_data.h"
 #include "ovl_patches.hpp"
 #include "librecomp/game.hpp"
 #include "librecomp/mods.hpp"
@@ -586,6 +587,7 @@ int main(int argc, char** argv) {
 
     banjo::register_bk_overlays();
     banjo::register_bk_patches();
+    recomp::init_extended_actor_data();
     banjo::load_config();
 
     recomp::rsp::callbacks_t rsp_callbacks{

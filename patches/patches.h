@@ -25,11 +25,16 @@ void osWriteBackDCacheAll(void);
 #define free free_recomp
 #define realloc realloc_recomp
 #define memcpy memcpy_recomp
+#define strchr strchr_recomp
+#define strlen strlen_recomp
 
 #include "ultra64.h"
 
 typedef int bool;
 
+typedef unsigned size_t;
+void memcpy(void * dst, void *src, int size);
+char* strchr(const char* s, int c);
 int recomp_printf(const char* fmt, ...);
 
 #endif

@@ -32,6 +32,19 @@ extern "C" void recomp_exit(uint8_t* rdram, recomp_context* ctx) {
     ultramodern::quit();
 }
 
+extern "C" void recomp_error(uint8_t* rdram, recomp_context* ctx) {
+    std::string str{};
+    PTR(u8) str_ptr = _arg<0, PTR(u8)>(rdram, ctx);
+
+    for (size_t i = 0; MEM_B(str_ptr, i) != '\x00'; i++) {
+        str += (char)MEM_B(str_ptr, i);
+    }
+
+    recompui::message_box(str.c_str());
+    assert(false);
+    ultramodern::error_handling::quick_exit(__FILE__, __LINE__, __FUNCTION__);
+}
+
 extern "C" void recomp_get_gyro_deltas(uint8_t* rdram, recomp_context* ctx) {
     float* x_out = _arg<0, float*>(rdram, ctx);
     float* y_out = _arg<1, float*>(rdram, ctx);
