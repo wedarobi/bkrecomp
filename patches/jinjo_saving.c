@@ -304,6 +304,17 @@ static bool SavedJinjo_is_jinjo_collected(u32 levelIdx, u32 jinjoIdx)
         || SavedJinjo_get_collected_raw_bit(levelIdx, jinjoIdx);
 }
 
+/**
+ * Mark all jinjos as collected. This is "safe" to re-run even if they are
+ * already marked as collected, as `SavedJinjo_set_collected` will leave
+ * at least one jinjo bit as 0.
+ */
+static void SavedJinjo_ensure_all_marked_collected_for_level(u32 levelIdx)
+{
+    for (u32 i = 0; i < SAVEDJINJO_NUM_BITS_PER_LEVEL - 1; i++)
+        SavedJinjo_set_collected(levelIdx, i, TRUE);
+}
+
 static void SavedJinjo_clear_all_for_level(u32 levelIdx)
 {
     for (u32 i = 0; i < SAVEDJINJO_NUM_BITS_PER_LEVEL; i++)
@@ -430,11 +441,15 @@ void chJinjo_update(Actor * this)
     {
         // Check if this jinjo has already been marked as collected before even being born (loaded)
 
-        u32 levelIdx = level_get();
+        u32 levelIdx     = level_get();
         s32 currJinjoIdx = jinjo_get_jinjoidx_by_actorId(this->modelCacheIndex);
+
+        bool toDespawn = FALSE;
 
         if (SavedJinjo_is_jinjo_collected(levelIdx, currJinjoIdx))
         {
+            toDespawn = TRUE;
+
             // Check if we need to respawn the jiggy in its place
             if (currJinjoIdx == SavedJinjo_restore_spawned_jiggy_at_given_jinjo_idx(levelIdx))
             {
@@ -456,8 +471,18 @@ void chJinjo_update(Actor * this)
                     codeABC00_spawnJiggyAtLocation(jinjoJiggyIdx, (f32 *)&jiggypos);
                 }
             }
+        }
+        else if (jiggyscore_isCollected(get_jiggy_idx_for_jinjo_jiggy(levelIdx)))
+        {
+            // Odd. The jiggy is collected, but we have an uncollected jinjo.
+            // Nuke all jinjos, and remember them
+            toDespawn = TRUE;
+            SavedJinjo_ensure_all_marked_collected_for_level(levelIdx);
+        }
 
-            // We're already collected, so skip init, despawn, and don't proceed to vanilla update
+        if (toDespawn)
+        {
+            // Skip init, despawn, and don't proceed to vanilla update
             this->initialized = TRUE;
 
             return marker_despawn(this->marker);
