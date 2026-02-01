@@ -81,7 +81,6 @@ bool recomp_in_demo_playback_game_mode();
 #define SAVEDJINJO_NUM_BITS_PER_LEVEL (6)
 
 static vec3f sJinjoJiggySpawnPosition     = {0};
-static bool  sJinjoJiggyRestoredForLevel  = FALSE;
 static bool  sJinjoJiggySpawnedOnMapEnter = FALSE;
 
 // Jinjo saving can only safely be changed while in the lair, so this value is only updated when in the lair.
@@ -389,8 +388,7 @@ void chJinjo_update(Actor * this)
                     {
                         // Bounce up high, and start higher too
 
-                        sJinjoJiggySpawnPosition    = jiggypos;
-                        sJinjoJiggyRestoredForLevel = TRUE;
+                        sJinjoJiggySpawnPosition = jiggypos;
 
                         // Check if we've just entered the map.
                         sJinjoJiggySpawnedOnMapEnter = get_global_timer() <= sMapInitialVars.counter + 20;
@@ -683,11 +681,8 @@ void jinjo_saving_on_map_load(void)
     if (map_get() != sMapInitialVars.map)
     {
         if (level_get() != sMapInitialVars.level)
-        {
             // Reset on new level
-            sJinjoJiggyRestoredForLevel  = FALSE;
             sJinjoJiggySpawnedOnMapEnter = FALSE;
-        }
 
         sMapInitialVars.map     = map_get();
         sMapInitialVars.level   = level_get();
@@ -710,7 +705,7 @@ void jinjo_saving_update(void)
     }
 
     // Iterate over all active objects and clamp the jinjo jiggy's position if required
-    if (jinjo_saving_enabled_cached && sJinjoJiggyRestoredForLevel && sJinjoJiggySpawnedOnMapEnter)
+    if (jinjo_saving_enabled_cached && sJinjoJiggySpawnedOnMapEnter)
     {
         if (suBaddieActorArray != NULL)
         {
@@ -731,16 +726,9 @@ void jinjo_saving_update(void)
                         /**
                          * So now we know that this is the jinjo jiggy for this level,
                          * and that it was restored by us.
-                         * 
-                         * It's not possible for `sJinjoJiggyRestoredForLevel` to be TRUE
-                         * if we didn't spawn the jiggy ourselves, since after it's set,
-                         * the game doesn't spawn this same jiggy naturally, and we cannot
-                         * reach this part of the jiggy update function for it.
-                         * 
-                         * ---
-                         * 
+
                          * Restored jinjo jiggies can clip through the floor if out of view
-                         * of the camera.
+                         * of the camera. This is a bug also present on XBLA.
                          * 
                          * Assume that any jinjo jiggy that spawns at the time of us entering
                          * the map can potentially clip out of bounds. Keep it in place.
