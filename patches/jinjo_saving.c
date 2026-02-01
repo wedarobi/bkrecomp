@@ -115,7 +115,7 @@ RECOMP_EXPORT s32 bkrecomp_jinjo_saving_active()
 }
 
 
-/*********************** Helpers */
+/*********************** Misc helpers */
 
 static f32 clamp_f32(f32 val, f32 min, f32 max)
 {
@@ -128,6 +128,20 @@ static u32 get_global_timer(void)
 {
     return gGlobalTimer;
 }
+
+static u32 get_curr_vanilla_jinjobits(void)
+{
+    return D_80385F30[ITEM_12_JINJOS];
+}
+
+static u32 get_jiggy_idx_for_jinjo_jiggy(u32 levelIdx)
+{
+    // The jinjo jiggy is the first jiggy in each level's list of jiggy IDs
+    return ((levelIdx - 1) * 10) + 1;
+}
+
+
+/*********************** Main functions */
 
 /**
  * jinjodata
@@ -148,12 +162,6 @@ static u8 jinjodata_get_byte(u32 idx)
 static void jinjodata_set_byte(u32 idx, u8 value)
 {
     loaded_file_extension_data.jinjo_data[idx] = value;
-}
-
-static u32 get_jiggy_idx_for_jinjo_jiggy(u32 levelIdx)
-{
-    // The jinjo jiggy is the first jiggy in each level's list of jiggy IDs
-    return ((levelIdx - 1) * 10) + 1;
 }
 
 /**
@@ -202,6 +210,17 @@ enum JinjoIdx
     JINJOIDX_4_YELLOW,
 };
 
+static s32 jinjodata_get_bit_idx(u32 levelIdx, u32 jinjoIdx)
+{
+    s32 levelSubtract = jinjo_get_level_lookup_subtract_amount(levelIdx);
+    if (levelSubtract < 0)
+        return -1;
+
+    levelIdx -= levelSubtract;
+
+    return (levelIdx * SAVEDJINJO_NUM_BITS_PER_LEVEL) + jinjoIdx;
+}
+
 static s32 jinjo_get_jinjoidx_by_actorId(u32 actorId)
 {
     switch (actorId)
@@ -218,17 +237,15 @@ static s32 jinjo_get_jinjoidx_by_actorId(u32 actorId)
 }
 
 /**
- * Will not return proper individualised results if all jinjos are collected.
+ * Returns raw bit, so will not return proper individualised results if all jinjos are collected.
+ * 
  * Pass `SAVEDJINJO_IDX_ALL_COLLECTED` for jinjoIdx to get the final "all collected" flag
  */
-static bool SavedJinjo_get_collected_bit(u32 levelIdx, u32 jinjoIdx)
+static bool SavedJinjo_get_collected_raw_bit(u32 levelIdx, u32 jinjoIdx)
 {
-    s32 levelSubtract = jinjo_get_level_lookup_subtract_amount(levelIdx);
-    if (levelSubtract < 0)
+    s32 bitIdx = jinjodata_get_bit_idx(levelIdx, jinjoIdx);
+    if (bitIdx < 0)
         return FALSE;
-    levelIdx -= levelSubtract;
-
-    u32 bitIdx = (levelIdx * SAVEDJINJO_NUM_BITS_PER_LEVEL) + jinjoIdx;
 
     u32 byte = bitIdx >> 3;
     u32 bit  = bitIdx &  7;
@@ -245,23 +262,29 @@ static u32 SavedJinjo_get_raw_jinjobits(u32 levelIdx)
     u32 jinjobits = 0;
 
     for (u32 i = 0; i < 5; i++)
-        if (SavedJinjo_get_collected_bit(levelIdx, i))
+        if (SavedJinjo_get_collected_raw_bit(levelIdx, i))
             jinjobits |= (1 << i);
 
     return jinjobits;
 }
 
 /**
- * Pass `SAVEDJINJO_IDX_ALL_COLLECTED` for jinjoIdx to set the final "all collected" flag
+ * Can clear each bit individually, but won't _enable_ the fifth collected
+ * jinjo's bit.
+ * 
+ * i.e. Automatically handles setting the final "all collected" flag if
+ * appropriate, but does not automatically clear it.
  */
 static void SavedJinjo_set_collected(u32 levelIdx, u32 jinjoIdx, bool collected)
 {
-    s32 levelSubtract = jinjo_get_level_lookup_subtract_amount(levelIdx);
-    if (levelSubtract < 0)
+    s32 bitIdx = jinjodata_get_bit_idx(levelIdx, jinjoIdx);
+    if (bitIdx < 0)
         return;
 
     // Check to see if getting this jinjo would give us all five.
     // If so, just set the "all collected" flag instead.
+    // This part is only relevant when collecting a jinjo, not clearing it.
+    if (collected)
     {
         u32 jinjobits = SavedJinjo_get_raw_jinjobits(levelIdx);
 
@@ -272,11 +295,6 @@ static void SavedJinjo_set_collected(u32 levelIdx, u32 jinjoIdx, bool collected)
             // This retains the final collected jinjo bit as 0
             jinjoIdx = SAVEDJINJO_IDX_ALL_COLLECTED;
     }
-
-    // We do this after the jinjo all collected check, else we would subtract this multiple times
-    levelIdx -= levelSubtract;
-
-    u32 bitIdx = (levelIdx * SAVEDJINJO_NUM_BITS_PER_LEVEL) + jinjoIdx;
 
     u32 byte = bitIdx >> 3;
     u32 bit  = bitIdx &  7;
@@ -289,9 +307,21 @@ static void SavedJinjo_set_collected(u32 levelIdx, u32 jinjoIdx, bool collected)
     );
 }
 
+static bool SavedJinjo_is_jinjo_collected(u32 levelIdx, u32 jinjoIdx)
+{
+    return SavedJinjo_get_collected_raw_bit(levelIdx, SAVEDJINJO_IDX_ALL_COLLECTED)
+        || SavedJinjo_get_collected_raw_bit(levelIdx, jinjoIdx);
+}
+
+static void SavedJinjo_clear_all_for_level(u32 levelIdx)
+{
+    for (u32 i = 0; i < SAVEDJINJO_NUM_BITS_PER_LEVEL; i++)
+        SavedJinjo_set_collected(levelIdx, i, FALSE);
+}
+
 /**
+ * Returns the jinjo idx at which the spawned jiggy should be restored.
  * Returns -1 if there's no spawned jiggy to restore.
- * Else, returns the jinjo idx at which the spawned jiggy should be restored.
  */
 static s32 SavedJinjo_restore_spawned_jiggy_at_given_jinjo_idx(u32 levelIdx)
 {
@@ -303,14 +333,14 @@ static s32 SavedJinjo_restore_spawned_jiggy_at_given_jinjo_idx(u32 levelIdx)
         return -1;
 
     // Check if the "all collected" flag is set
-    if (!SavedJinjo_get_collected_bit(levelIdx, SAVEDJINJO_IDX_ALL_COLLECTED))
+    if (!SavedJinjo_get_collected_raw_bit(levelIdx, SAVEDJINJO_IDX_ALL_COLLECTED))
         // Not set, no need to restore
         return -1;
 
     // Flag set, we need to restore the jiggy. Get the idx
 
     for (u32 i = 0; i < 5; i++)
-        if (!SavedJinjo_get_collected_bit(levelIdx, i))
+        if (!SavedJinjo_get_collected_raw_bit(levelIdx, i))
             // Found one of the jinjo flags set to 0
             // This denotes the idx of the jinjo at which to spawn the jiggy
             return i;
@@ -334,15 +364,64 @@ static void jinjo_collision(ActorMarker *this, ActorMarker *other)
         // Make sure we're not in a demo
         if (!recomp_in_demo_playback_game_mode())
         {
-            // Save collected status
-            // Don't check whether jinjo saving is enabled, collected jinjos should always save.
-            // Only _restoring_ them is conditional.
+            /**
+             * If this is the first jinjo collected in the level, reset saved jinjos.
+             * 
+             * This addresses a situation where a user may toggle jinjo saving on and
+             * off a few times, where the saved jinjo state may not correlate with what
+             * the user last remembers.
+             *
+             * _______________________________________________________________________
+             * | An example of the inconsistency at play:
+             * |   Step 1: jinjo saving disabled
+             * |   Step 2: enter level (run 1)
+             * |   Step 3: collect jinjos P then Y then B (not G or O)
+             * |   Step 4: leave level
+             * |   Step 5: enter level (run 2)
+             * |   Step 6: collect jinjos P then G then O (not Y or B)
+             * |   Step 7: leave level
+             * |   Step 8: jinjo saving enabled
+             * |   Step 9: enter level (run 3)
+             * |   Result: All jinjos gone, jiggy is at jinjo O (orange)!
+             * |
+             * | The jiggy spawning at the orange jinjo would be surprising to a player
+             * | since on their most recent run, they left behind Y and B. They would
+             * | expect the jiggy to be at Y or B, if they expected a jiggy at all.
+             * |
+             * | But internally, this behaviour is consistent! They have _at some point_
+             * | collected all five jinjos, with orange being the 5th they ever collected
+             * | for this level on this file.
+             * |
+             * | This confusion should only take place when the following occurs:
+             * |   - a version of BanjoRecompiled with jinjo saving is used, then:
+             * |   - user collects jinjos on this level (and on this file) at least once
+             * |   - user leaves (exits game, leaves level, etc)
+             * |   - user turns off jinjo saving, and collects >= 1 jinjo again in the
+             * |     same level at least once, but in a different order to their previous
+             * |     playthrough
+             * |   - user leaves
+             * |   - user turns on jinjo saving and enters that level again
+             * |
+             * | Solution:
+             * |   This code resets jinjos on run 2 and leaves jinjos Y and B uncollected
+             * |   for run 3, with the jiggy spawning once those are both collected.
+             * |   This behaviour would feel the most natural for the player.
+             * |_______________________________________________________________________
+             */
+            {
+                // Since we run this before the vanilla collision function, we check for a score of 0.
+                // This should work regardless of jinjo saving's enabled state.
+                if (get_curr_vanilla_jinjobits() == 0)
+                    SavedJinjo_clear_all_for_level(level_get());
+            }
 
-            SavedJinjo_set_collected(
-                level_get(),
-                jinjo_get_jinjoidx_by_actorId(actor->modelCacheIndex),
-                TRUE
-            );
+            /**
+             * Now save collected status.
+             * 
+             * Don't check whether jinjo saving is enabled, collected jinjos should always save.
+             * Only _restoring_ them is conditional.
+             */
+            SavedJinjo_set_collected(level_get(), jinjo_get_jinjoidx_by_actorId(actor->modelCacheIndex), TRUE);
         }
     }
 
@@ -365,13 +444,7 @@ void chJinjo_update(Actor * this)
         u32 levelIdx = level_get();
         s32 jinjoIdx = jinjo_get_jinjoidx_by_actorId(this->modelCacheIndex);
 
-        bool collected =
-            SavedJinjo_get_collected_bit(levelIdx, SAVEDJINJO_IDX_ALL_COLLECTED)
-            ||
-            SavedJinjo_get_collected_bit(levelIdx, jinjoIdx)
-        ;
-
-        if (collected)
+        if (SavedJinjo_is_jinjo_collected(levelIdx, jinjoIdx))
         {
             // Check if we need to spawn the jiggy
             {
@@ -391,7 +464,7 @@ void chJinjo_update(Actor * this)
                         sJinjoJiggySpawnPosition = jiggypos;
 
                         // Check if we've just entered the map.
-                        sJinjoJiggySpawnedOnMapEnter = get_global_timer() <= sMapInitialVars.counter + 20;
+                        sJinjoJiggySpawnedOnMapEnter = get_global_timer() <= sMapInitialVars.counter + 5;
 
                         jiggypos.y += 50;
 
@@ -660,7 +733,7 @@ u32 jinjo_saving_get_counters(enum level_e level)
         // No jinjos, clear all
         jinjobits = 0b00000;
     }
-    else if (SavedJinjo_get_collected_bit(level, SAVEDJINJO_IDX_ALL_COLLECTED))
+    else if (SavedJinjo_get_collected_raw_bit(level, SAVEDJINJO_IDX_ALL_COLLECTED))
     {
         // Set all in a single assignment
         // Looping over as in the below loop WON'T work, due to how we save the index of the final collected jinjo
