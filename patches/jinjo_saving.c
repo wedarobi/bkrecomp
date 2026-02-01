@@ -77,8 +77,8 @@ bool recomp_in_demo_playback_game_mode();
 
 /*********************** Statics */
 
-#define SAVEDJINJO_IDX_ALL_COLLECTED  (5)
 #define SAVEDJINJO_NUM_BITS_PER_LEVEL (6)
+#define SAVEDJINJO_IDX_ALL_COLLECTED  (SAVEDJINJO_NUM_BITS_PER_LEVEL - 1)
 
 static vec3f sJinjoJiggySpawnPosition     = {0};
 static bool  sJinjoJiggySpawnedOnMapEnter = FALSE;
@@ -201,15 +201,6 @@ static s32 jinjo_get_level_lookup_subtract_amount(u32 levelIdx)
     }
 }
 
-enum JinjoIdx
-{
-    JINJOIDX_0_BLUE,
-    JINJOIDX_1_GREEN,
-    JINJOIDX_2_ORANGE,
-    JINJOIDX_3_PINK,
-    JINJOIDX_4_YELLOW,
-};
-
 static s32 jinjodata_get_bit_idx(u32 levelIdx, u32 jinjoIdx)
 {
     s32 levelSubtract = jinjo_get_level_lookup_subtract_amount(levelIdx);
@@ -226,11 +217,11 @@ static s32 jinjo_get_jinjoidx_by_actorId(u32 actorId)
     switch (actorId)
     {
         // ordered by their marker idx
-        case ACTOR_60_JINJO_BLUE:   return JINJOIDX_0_BLUE;
-        case ACTOR_62_JINJO_GREEN:  return JINJOIDX_1_GREEN;
-        case ACTOR_5F_JINJO_ORANGE: return JINJOIDX_2_ORANGE;
-        case ACTOR_61_JINJO_PINK:   return JINJOIDX_3_PINK;
-        case ACTOR_5E_JINJO_YELLOW: return JINJOIDX_4_YELLOW;
+        case ACTOR_60_JINJO_BLUE:   return 0;
+        case ACTOR_62_JINJO_GREEN:  return 1;
+        case ACTOR_5F_JINJO_ORANGE: return 2;
+        case ACTOR_61_JINJO_PINK:   return 3;
+        case ACTOR_5E_JINJO_YELLOW: return 4;
         default:
             return -1;
     }
@@ -283,7 +274,7 @@ static void SavedJinjo_set_collected(u32 levelIdx, u32 jinjoIdx, bool collected)
 
     // Check to see if getting this jinjo would give us all five.
     // If so, just set the "all collected" flag instead.
-    // This part is only relevant when collecting a jinjo, not clearing it.
+    // (this block is only relevant when collecting a jinjo, not clearing it)
     if (collected)
     {
         u32 jinjobits = SavedJinjo_get_raw_jinjobits(levelIdx);
@@ -325,11 +316,8 @@ static void SavedJinjo_clear_all_for_level(u32 levelIdx)
  */
 static s32 SavedJinjo_restore_spawned_jiggy_at_given_jinjo_idx(u32 levelIdx)
 {
-    u32 jinjoJiggyIdx = get_jiggy_idx_for_jinjo_jiggy(levelIdx);
-
-    bool jinjoJiggyCollected = jiggyscore_isCollected(jinjoJiggyIdx);
-    if (jinjoJiggyCollected)
-        // Collected, no need to spawn
+    if (jiggyscore_isCollected(get_jiggy_idx_for_jinjo_jiggy(levelIdx)))
+        // Jinjo jiggy collected, no need to spawn
         return -1;
 
     // Check if the "all collected" flag is set
@@ -361,7 +349,7 @@ static void jinjo_collision(ActorMarker *this, ActorMarker *other)
 
     if (actor->state < 5)
     {
-        // Make sure we're not in a demo
+        // Make sure we're not in a demo before we change any saved jinjo data
         if (!recomp_in_demo_playback_game_mode())
         {
             /**
@@ -395,6 +383,7 @@ static void jinjo_collision(ActorMarker *this, ActorMarker *other)
              * | This confusion should only take place when the following occurs:
              * |   - a version of BanjoRecompiled with jinjo saving is used, then:
              * |   - user collects jinjos on this level (and on this file) at least once
+             * |     (with or without jinjo saving enabled)
              * |   - user leaves (exits game, leaves level, etc)
              * |   - user turns off jinjo saving, and collects >= 1 jinjo again in the
              * |     same level at least once, but in a different order to their previous
@@ -439,41 +428,36 @@ void chJinjo_update(Actor * this)
 {
     if (!this->initialized && jinjo_saving_enabled_cached)
     {
-        // Check normal jinjo counters
+        // Check if this jinjo has already been marked as collected before even being born (loaded)
 
         u32 levelIdx = level_get();
-        s32 jinjoIdx = jinjo_get_jinjoidx_by_actorId(this->modelCacheIndex);
+        s32 currJinjoIdx = jinjo_get_jinjoidx_by_actorId(this->modelCacheIndex);
 
-        if (SavedJinjo_is_jinjo_collected(levelIdx, jinjoIdx))
+        if (SavedJinjo_is_jinjo_collected(levelIdx, currJinjoIdx))
         {
-            // Check if we need to spawn the jiggy
+            // Check if we need to respawn the jiggy in its place
+            if (currJinjoIdx == SavedJinjo_restore_spawned_jiggy_at_given_jinjo_idx(levelIdx))
             {
-                s32 jinjoIdxToSpawnJiggyAt = SavedJinjo_restore_spawned_jiggy_at_given_jinjo_idx(levelIdx);
-                if (jinjoIdxToSpawnJiggyAt == jinjoIdx)
+                // We need to spawn the jiggy at this jinjo's position
+
+                u32 jinjoJiggyIdx = get_jiggy_idx_for_jinjo_jiggy(levelIdx);
+
+                vec3f jiggypos = *(vec3f *)&this->position;
+
+                // Spawn jiggy silently, and start higher
                 {
-                    // We need to spawn the jiggy at our own position (i.e. this jinjo's position)
+                    sJinjoJiggySpawnPosition = jiggypos;
 
-                    u32 jinjoJiggyIdx = get_jiggy_idx_for_jinjo_jiggy(levelIdx);
+                    jiggypos.y += 50;
 
-                    vec3f jiggypos = *(vec3f *)&this->position;
+                    // Check if we've just entered the map.
+                    sJinjoJiggySpawnedOnMapEnter = get_global_timer() <= sMapInitialVars.counter + 5;
 
-                    // Spawn jiggy silently
-                    {
-                        // Bounce up high, and start higher too
-
-                        sJinjoJiggySpawnPosition = jiggypos;
-
-                        // Check if we've just entered the map.
-                        sJinjoJiggySpawnedOnMapEnter = get_global_timer() <= sMapInitialVars.counter + 5;
-
-                        jiggypos.y += 50;
-
-                        codeABC00_spawnJiggyAtLocation(jinjoJiggyIdx, (f32 *)&jiggypos);
-                    }
+                    codeABC00_spawnJiggyAtLocation(jinjoJiggyIdx, (f32 *)&jiggypos);
                 }
             }
 
-            // Despawn, and don't proceed
+            // We're already collected, so skip init, despawn, and don't proceed to vanilla update
             this->initialized = TRUE;
 
             return marker_despawn(this->marker);
@@ -765,11 +749,11 @@ void jinjo_saving_on_map_load(void)
 
 /**
  * Only update our internal "is jinjo saving enabled" variable outside main levels.
- * Same logic as `note_saving_update`.
  */
 void jinjo_saving_update(void)
 {
     // When in the lair or file select, update the cached jinjo saving enabled state.
+    // Same logic as `note_saving_update`.
     if (level_get() == LEVEL_6_LAIR || map_get() == MAP_91_FILE_SELECT)
     {
         jinjo_saving_enabled_cached = jinjo_saving_override_disabled
@@ -782,9 +766,7 @@ void jinjo_saving_update(void)
     {
         if (suBaddieActorArray != NULL)
         {
-            s32 nObjs = suBaddieActorArray->cnt;
-
-            for (s32 i = 0; i < nObjs; i++)
+            for (s32 i = 0; i < suBaddieActorArray->cnt; i++)
             {
                 Actor *this = &suBaddieActorArray->data[i];
 
@@ -807,9 +789,9 @@ void jinjo_saving_update(void)
                          * the map can potentially clip out of bounds. Keep it in place.
                          */
 
-                        this->position[0] = clamp_f32(this->position[0], sJinjoJiggySpawnPosition.x, sJinjoJiggySpawnPosition.x + 2.f);
-                        this->position[1] = clamp_f32(this->position[1], sJinjoJiggySpawnPosition.y, sJinjoJiggySpawnPosition.y + 10.f);
-                        this->position[2] = clamp_f32(this->position[2], sJinjoJiggySpawnPosition.z, sJinjoJiggySpawnPosition.z + 2.f);
+                        this->position[0] = sJinjoJiggySpawnPosition.x;
+                        this->position[1] = clamp_f32(this->position[1], sJinjoJiggySpawnPosition.y, sJinjoJiggySpawnPosition.y + 20.f);
+                        this->position[2] = sJinjoJiggySpawnPosition.z;
                     }
                 }
             }
