@@ -268,10 +268,6 @@ static u32 SavedJinjo_get_raw_jinjobits(u32 levelIdx)
  */
 static void SavedJinjo_set_collected(u32 levelIdx, u32 jinjoIdx, bool collected)
 {
-    s32 bitIdx = jinjodata_get_bit_idx(levelIdx, jinjoIdx);
-    if (bitIdx < 0)
-        return;
-
     // Check to see if getting this jinjo would give us all five.
     // If so, just set the "all collected" flag instead.
     // (this block is only relevant when collecting a jinjo, not clearing it)
@@ -286,6 +282,10 @@ static void SavedJinjo_set_collected(u32 levelIdx, u32 jinjoIdx, bool collected)
             // This retains the final collected jinjo bit as 0
             jinjoIdx = SAVEDJINJO_IDX_ALL_COLLECTED;
     }
+
+    s32 bitIdx = jinjodata_get_bit_idx(levelIdx, jinjoIdx);
+    if (bitIdx < 0)
+        return;
 
     u32 byte = bitIdx >> 3;
     u32 bit  = bitIdx &  7;
