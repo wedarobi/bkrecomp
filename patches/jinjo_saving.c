@@ -185,6 +185,19 @@ static s32 jinjo_get_level_lookup_subtract_amount(u32 levelIdx)
     }
 }
 
+static bool jinjo_saving_is_allowed_by_volatileFlags(void)
+{
+    bool toPrevent =
+        // FF picture question
+        volatileFlag_get(VOLATILE_FLAG_1)
+        // FF minigame
+        || volatileFlag_get(VOLATILE_FLAG_2_FF_IN_MINIGAME)
+        // Credits
+        || volatileFlag_get(VOLATILE_FLAG_1F_IN_CHARACTER_PARADE);
+
+    return !toPrevent;
+}
+
 static bool jinjo_bit_idx_is_valid(s32 jinjoIdx)
 {
     // Includes all jinjo indices, plus extra bits
@@ -357,7 +370,7 @@ static void jinjo_collision(ActorMarker *this, ActorMarker *other)
     if (actor->state < 5)
     {
         // Make sure we're not in a demo before we change any saved jinjo data
-        if (!recomp_in_demo_playback_game_mode())
+        if (!recomp_in_demo_playback_game_mode() && jinjo_saving_is_allowed_by_volatileFlags())
         {
             /**
              * If this is the first jinjo collected in the level, reset saved jinjos.
@@ -431,9 +444,9 @@ static void jinjo_collision(ActorMarker *this, ActorMarker *other)
  * 3. Replace the collision pointer
  */
 RECOMP_PATCH
-void chJinjo_update(Actor * this)
+void chJinjo_update(Actor *this)
 {
-    if (!this->initialized && jinjo_saving_enabled_cached)
+    if (!this->initialized && jinjo_saving_enabled_cached && jinjo_saving_is_allowed_by_volatileFlags())
     {
         // Check if this jinjo has already been marked as collected before even being born (loaded)
 
