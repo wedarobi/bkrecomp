@@ -448,7 +448,7 @@ static void jinjo_collision(ActorMarker *this, ActorMarker *other)
 RECOMP_PATCH
 void chJinjo_update(Actor *this)
 {
-    if (!this->initialized && jinjo_saving_enabled_cached && jinjo_saving_is_allowed_by_volatileFlags())
+    if (!this->initialized && jinjo_saving_enabled_cached && jinjo_saving_is_allowed_by_volatileFlags() && !recomp_in_demo_playback_game_mode())
     {
         // Check if this jinjo has already been marked as collected before even being born (loaded)
 
